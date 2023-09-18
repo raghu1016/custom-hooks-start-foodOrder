@@ -1,179 +1,69 @@
-import fs from "node:fs/promises";
+import fs from 'node:fs/promises';
 
-import bodyParser from "body-parser";
-import express from "express";
+import bodyParser from 'body-parser';
+import express from 'express';
 
 const app = express();
 
 app.use(bodyParser.json());
-app.use(express.static("backend/public"));
+app.use(express.static('backend/public'));
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-Requested-With,content-type"
-  );
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
 
-app.get("/", (req, res) => {
-  res.json({ message: "Hello World" });
+app.get('/meals', async (req, res) => {
+  const meals = await fs.readFile('./data/available-meals.json', 'utf8');
+  res.json(JSON.parse(meals));
 });
 
-app.get("/events", async (req, res) => {
-  const { max, search } = req.query;
-  const eventsFileContent = await fs.readFile("./backend/data/events.json");
-  let events = JSON.parse(eventsFileContent);
+app.post('/orders', async (req, res) => {
+  const orderData = req.body.order;
 
-  if (search) {
-    events = events.filter((event) => {
-      const searchableText = `${event.title} ${event.description} ${event.location}`;
-      return searchableText.toLowerCase().includes(search.toLowerCase());
+  if (orderData === null || orderData.items === null || orderData.items === []) {
+    return res
+      .status(400)
+      .json({ message: 'Missing data.' });
+  }
+
+  if (
+    orderData.customer.email === null ||
+    !orderData.customer.email.includes('@') ||
+    orderData.customer.name === null ||
+    orderData.customer.name.trim() === '' ||
+    orderData.customer.street === null ||
+    orderData.customer.street.trim() === '' ||
+    orderData.customer['postal-code'] === null ||
+    orderData.customer['postal-code'].trim() === '' ||
+    orderData.customer.city === null ||
+    orderData.customer.city.trim() === ''
+  ) {
+    return res.status(400).json({
+      message:
+        'Missing data: Email, name, street, postal code or city is missing.',
     });
   }
 
-  if (max) {
-    events = events.slice(events.length - max, events.length);
-  }
-
-  res.json({
-    events: events.map((event) => ({
-      id: event.id,
-      title: event.title,
-      image: event.image,
-      date: event.date,
-      location: event.location,
-    })),
-  });
-});
-
-app.get("/events/images", async (req, res) => {
-  const imagesFileContent = await fs.readFile("./backend/data/images.json");
-  const images = JSON.parse(imagesFileContent);
-
-  res.json({ images });
-});
-
-app.get("/events/:id", async (req, res) => {
-  const { id } = req.params;
-
-  const eventsFileContent = await fs.readFile("./backend/data/events.json");
-  const events = JSON.parse(eventsFileContent);
-
-  const event = events.find((event) => event.id === id);
-
-  if (!event) {
-    return res
-      .status(404)
-      .json({ message: `For the id ${id}, no event could be found.` });
-  }
-
-  setTimeout(() => {
-    res.json({ event });
-  }, 1000);
-});
-
-app.post("/events", async (req, res) => {
-  const { event } = req.body;
-
-  if (!event) {
-    return res.status(400).json({ message: "Event is required" });
-  }
-
-  console.log(event);
-
-  if (
-    !event.title?.trim() ||
-    !event.description?.trim() ||
-    !event.date?.trim() ||
-    !event.time?.trim() ||
-    !event.image?.trim() ||
-    !event.location?.trim()
-  ) {
-    return res.status(400).json({ message: "Invalid data provided." });
-  }
-
-  const eventsFileContent = await fs.readFile("./backend/data/events.json");
-  const events = JSON.parse(eventsFileContent);
-
-  const newEvent = {
-    id: Math.round(Math.random() * 10000).toString(),
-    ...event,
+  const newOrder = {
+    ...orderData,
+    id: (Math.random() * 1000).toString(),
   };
-
-  events.push(newEvent);
-
-  await fs.writeFile("./backend/data/events.json", JSON.stringify(events));
-
-  res.json({ event: newEvent });
+  const orders = await fs.readFile('./data/orders.json', 'utf8');
+  const allOrders = JSON.parse(orders);
+  allOrders.push(newOrder);
+  await fs.writeFile('./data/orders.json', JSON.stringify(allOrders));
+  res.status(201).json({ message: 'Order created!' });
 });
 
-app.put("/events/:id", async (req, res) => {
-  const { id } = req.params;
-  const { event } = req.body;
-
-  if (!event) {
-    return res.status(400).json({ message: "Event is required" });
+app.use((req, res) => {
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
   }
 
-  if (
-    !event.title?.trim() ||
-    !event.description?.trim() ||
-    !event.date?.trim() ||
-    !event.time?.trim() ||
-    !event.image?.trim() ||
-    !event.location?.trim()
-  ) {
-    return res.status(400).json({ message: "Invalid data provided." });
-  }
-
-  const eventsFileContent = await fs.readFile("./backend/data/events.json");
-  const events = JSON.parse(eventsFileContent);
-
-  const eventIndex = events.findIndex((event) => event.id === id);
-
-  if (eventIndex === -1) {
-    return res.status(404).json({ message: "Event not found" });
-  }
-
-  events[eventIndex] = {
-    id,
-    ...event,
-  };
-
-  await fs.writeFile("./backend/data/events.json", JSON.stringify(events));
-
-  setTimeout(() => {
-    res.json({ event: events[eventIndex] });
-  }, 1000);
+  res.status(404).json({ message: 'Not found' });
 });
 
-app.delete("/events/:id", async (req, res) => {
-  const { id } = req.params;
-
-  const eventsFileContent = await fs.readFile("./backend/data/events.json");
-  const events = JSON.parse(eventsFileContent);
-
-  const eventIndex = events.findIndex((event) => event.id === id);
-
-  if (eventIndex === -1) {
-    return res.status(404).json({ message: "Event not found" });
-  }
-
-  events.splice(eventIndex, 1);
-
-  await fs.writeFile("./backend/data/events.json", JSON.stringify(events));
-
-  setTimeout(() => {
-    res.json({ message: "Event deleted" });
-  }, 1000);
-});
-
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
-});
+app.listen(3000);
